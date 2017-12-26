@@ -1,4 +1,4 @@
-version: '3'
+version: '3.4'
 
 services:
   devweek_webapp:
@@ -6,3 +6,19 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
     ports:
       - "80"
+
+  rabbitmq:
+    ports:
+      - "15672"
+
+  s3:
+    ports:
+      - "9000"
+
+  redis:
+    ports:
+      - "6379"
+
+  mongodb:
+    ports:
+      - "27017"

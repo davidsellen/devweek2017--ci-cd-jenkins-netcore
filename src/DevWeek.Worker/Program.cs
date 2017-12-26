@@ -7,6 +7,7 @@ using System.IO;
 using System.Diagnostics;
 using Minio;
 using DevWeek.Services.Downloader;
+using Polly;
 
 namespace DevWeek
 {
@@ -14,10 +15,28 @@ namespace DevWeek
     {
         static void Main(string[] args)
         {
-            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+            Spring.Context.Support.AbstractApplicationContext appContext = null;
 
-            var appContext = ContextBuilder.BuildContext();
+            var retryOnStartupPolicy = Policy
+               //.HandleInner<StackExchange.Redis.RedisConnectionException>()
+               .Handle<Exception>()
+               .WaitAndRetry(9, retryAttempt =>
+                    TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))
+                );
+            //2^9=512 segundos (8,53333 minutos)
+            retryOnStartupPolicy.Execute(() =>
+            {
+                appContext = ContextBuilder.BuildContext();
+            });
 
+            Task.Run(async () => {
+                while(true)
+                {
+                    await appContext.GetObject<Services.DataService>().RebuildCache();
+                    System.Threading.Thread.Sleep(TimeSpan.FromMinutes(2));
+                }
+                
+            });
 
 
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
@@ -41,7 +60,6 @@ namespace DevWeek
                             var context = new DownloadContext()
                             {
                                 MediaUrl = messageObject.OriginalMediaUrl,
-                                OutputFileName = $"{Guid.NewGuid().ToString("N")}.mp4",
                                 Download = messageObject
                             };
 
@@ -49,9 +67,9 @@ namespace DevWeek
 
                             rabbitMQ.BasicAck(result.DeliveryTag, false);
                         }
-                        catch (InvalidOperationException ex) when (ex.Message.Contains("#invalidUrl"))
+                        catch (InvalidOperationException ex) when (ex.Message.Contains("#invalidUrl") || ex.Message.Contains("#invalidId"))
                         {
-                            rabbitMQ.BasicAck(result.DeliveryTag, false);
+                            rabbitMQ.BasicNack(result.DeliveryTag, false, false);
                         }
                         catch (Exception ex)
                         {
