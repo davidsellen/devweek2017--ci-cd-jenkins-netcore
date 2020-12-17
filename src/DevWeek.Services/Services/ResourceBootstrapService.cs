@@ -2,46 +2,86 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Linq;
+using MongoDB.Driver;
+using MongoDB.Driver.Linq;
+using MongoDB.Driver.Core;
 
 namespace DevWeek.Services
 {
+    /// <summary>
+    /// Initialize infrastructure without lock
+    /// </summary>
     public class ResourceBootstrapService
     {
         private readonly MinioClient minio;
-        private readonly RabbitMQ.Client.IModel model;
+        private readonly MongoClient mongoClient;
+        private readonly DistributedLockService distributedLockService;
 
-        public string MinioBucketName { get; set; }
-        public string DownloadPipelineQueue { get; set; }
-        public string DownloadPipelineRouteKey { get; set; }
-        public string DownloadPipelineExchange { get; set; }
+        public string[] MongoRequiredCollections { get; set; }
+        public string[] MinioBucketNames { get; set; }
+       
 
-        public ResourceBootstrapService(MinioClient minio, RabbitMQ.Client.IModel model)
+        public TimeSpan LockTimeout { get; set; }
+        public string DistributedLockKey { get; set; }
+
+        /// <summary>
+        /// Initialize a new instance of ResourceBootstrapService passing required connectors
+        /// </summary>
+        /// <param name="distributedLockService">DistributedLockService</param>
+        /// <param name="minio">S3</param>
+        /// <param name="mongoClient">MongoDB</param>
+        /// <param name="model">RabbitMQ</param>
+        public ResourceBootstrapService(DistributedLockService distributedLockService, MinioClient minio, MongoClient mongoClient)
         {
             this.minio = minio;
-            this.model = model;
+            this.mongoClient = mongoClient;
+            this.distributedLockService = distributedLockService;
         }
 
+        /// <summary>
+        /// Verify and initialize infrastructure
+        /// </summary>
         public void Check()
         {
-            this.CheckMinioServer();
-            this.CheckAMQPServer();
-
-        }
-
-        private void CheckMinioServer()
-        {
-            bool exists = minio.BucketExistsAsync(this.MinioBucketName).GetAwaiter().GetResult();
-            if (exists == false)
+            using (this.distributedLockService.Acquire(0, this.DistributedLockKey, this.LockTimeout))
             {
-                minio.MakeBucketAsync(this.MinioBucketName).GetAwaiter();
+                this.CheckMinioServer();
+                this.CkeckMongoDB();
             }
         }
 
-        private void CheckAMQPServer()
+        /// <summary>
+        /// Perform a check on S3 and create a bucket if necessary 
+        /// </summary>
+        private void CheckMinioServer()
         {
-            model.QueueDeclare(this.DownloadPipelineQueue, true, false, false, null);
-            model.ExchangeDeclare(this.DownloadPipelineExchange, "topic", true, false, null);
-            model.QueueBind(this.DownloadPipelineQueue, this.DownloadPipelineExchange, this.DownloadPipelineRouteKey, null);
+            foreach (string minioBucketName in this.MinioBucketNames)
+            {
+                bool exists = minio.BucketExistsAsync(minioBucketName).GetAwaiter().GetResult();
+                if (exists == false)
+                {
+                    minio.MakeBucketAsync(minioBucketName).GetAwaiter();
+                }
+            }
         }
+
+
+        /// <summary>
+        /// Perform a check on MongoDB and create some collections if necessary 
+        /// </summary>
+        private void CkeckMongoDB()
+        {
+            var database = this.mongoClient.GetDatabase("admin");
+            var collectionNames = database.ListCollections().ToList().Select(it => it["name"].AsString).ToArray();
+            var collectionNamesForCreation = this.MongoRequiredCollections.Where(it => collectionNames.Contains(it) == false).ToArray();
+            foreach (var collectionName in collectionNamesForCreation)
+            {
+                database.CreateCollection(collectionName);
+            }
+        }
+
+
+       
     }
 }

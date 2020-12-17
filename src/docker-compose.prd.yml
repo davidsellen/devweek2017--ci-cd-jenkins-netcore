@@ -1,0 +1,71 @@
+version: '3.4'
+
+services:
+  devweek_webapp:
+    image: luizcarlosfaria/devweek_webapp:${BUILD_VERSION_NUMBER}
+    ports: 
+      - "${DEPLOY_PORT_PREFIX}00:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${DEPLOY_LENV}
+#    deploy:
+#      placement:
+#        constraints: 
+#          - node.labels.appenv == prd
+      
+
+  
+  
+  
+  
+  
+  devweek_worker:
+    image: luizcarlosfaria/devweek_worker:${BUILD_VERSION_NUMBER}
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${DEPLOY_LENV}
+    deploy:
+      mode: replicated
+      replicas: 3
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 3
+        window: 600s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+#      placement:
+#        constraints: 
+#          - node.labels.appenv == prd
+
+  rabbitmq:
+    ports: 
+      - "${DEPLOY_PORT_PREFIX}01:15672"
+#    deploy:
+#      placement:
+#        constraints: 
+#          - node.labels.appenv == prd
+
+  s3:
+    ports: 
+      - "${DEPLOY_PORT_PREFIX}02:9000"
+#    deploy:
+#      placement:
+#        constraints: 
+#          - node.labels.appenv == prd
+
+  redis:
+    ports:
+      - "${DEPLOY_PORT_PREFIX}03:6379"
+#    deploy:
+#      placement:
+#        constraints: 
+#          - node.labels.appenv == prd
+
+  mongodb:
+    ports:
+      - "${DEPLOY_PORT_PREFIX}04:27017"
+#    deploy:
+#      placement:
+#        constraints: 
+#          - node.labels.appenv == prd

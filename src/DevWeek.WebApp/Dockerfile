@@ -1,12 +1,16 @@
-FROM microsoft/aspnetcore:2.0 AS base
+FROM microsoft/dotnet:2.2-aspnetcore-runtime-stretch-slim  AS base
 WORKDIR /app
 EXPOSE 80
 
-FROM microsoft/aspnetcore-build:2.0 AS build
+FROM microsoft/dotnet:2.2-sdk-stretch AS build
 WORKDIR /src
 COPY *.sln ./
-COPY DevWeek.WebApp/DevWeek.WebApp.csproj DevWeekWebApp/
-RUN dotnet restore
+COPY DevWeek.Worker/DevWeek.Worker.csproj DevWeek.Worker/
+COPY DevWeek.WebApp/DevWeek.WebApp.csproj DevWeek.WebApp/
+COPY DevWeek.Contracts/DevWeek.Contracts.csproj DevWeek.Contracts/
+COPY DevWeek.Services/DevWeek.Services.csproj DevWeek.Services/
+COPY DevWeek.Services.Tests/DevWeek.Services.Tests.csproj DevWeek.Services.Tests/
+RUN dotnet restore ./src-ci.sln
 COPY . .
 WORKDIR /src/DevWeek.WebApp
 RUN dotnet build -c Release -o /app
